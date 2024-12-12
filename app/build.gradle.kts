@@ -67,6 +67,9 @@ dependencies {
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.fragment.ktx)
 
+    // Volley
+    implementation(libs.volley)
+
     // ViewModels + coroutines
     implementation(libs.androidx.lifecycle.runtime.ktx)
 

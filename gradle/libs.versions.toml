@@ -32,6 +32,7 @@ androidx-lifecycle-runtime-ktx = {group = "androidx.lifecycle", name = "lifecycl
 androidx-lifecycle-viewmodel-ktx = {group = "androidx.lifecycle", name = "lifecycle-viewmodel-ktx", version.ref = "lifecycle"}
 androidx-lifecycle-livedata-ktx = {group = "androidx.lifecycle", name = "lifecycle-livedata-ktx", version.ref = "lifecycle"}
 androidx-lifecycle-common-java8 = {group = "androidx.lifecycle", name = "lifecycle-common-java8", version.ref = "lifecycle"}
+volley = { module = "com.android.volley:volley" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
