@@ -55,6 +55,7 @@ dependencies {
     // Room components
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
+    implementation(libs.android.volley)
     ksp(libs.room.compiler)
     androidTestImplementation(libs.room.testing)
 
@@ -68,7 +69,6 @@ dependencies {
     implementation(libs.androidx.fragment.ktx)
 
     // Volley
-    implementation(libs.volley)
 
     // ViewModels + coroutines
     implementation(libs.androidx.lifecycle.runtime.ktx)
