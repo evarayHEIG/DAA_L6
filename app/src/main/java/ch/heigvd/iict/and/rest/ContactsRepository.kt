@@ -3,30 +3,32 @@ package ch.heigvd.iict.and.rest
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.lifecycle.LiveData
+import ch.heigvd.iict.and.rest.adapters.CalendarAdapter
 import ch.heigvd.iict.and.rest.database.ContactsDao
 import ch.heigvd.iict.and.rest.models.Contact
 import ch.heigvd.iict.and.rest.models.ContactState
-import com.android.volley.Request
-import com.android.volley.toolbox.JsonArrayRequest
-import com.android.volley.toolbox.JsonObjectRequest
-import com.android.volley.toolbox.StringRequest
-import com.android.volley.toolbox.Volley
+import com.android.volley.Request.Method
+import com.android.volley.toolbox.*
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Calendar
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 class ContactsRepository(private val contactsDao: ContactsDao, private val context: Context) {
 
-    private val baseUrl = "https://daa.iict.ch/"
+    private val baseUrl = "https://daa.iict.ch"
     private val queue = Volley.newRequestQueue(context)
     private val prefs: SharedPreferences = context.getSharedPreferences("contacts_prefs", Context.MODE_PRIVATE)
-    private val gson = Gson()
+    private val gson = GsonBuilder()
+        .registerTypeAdapter(Calendar::class.java, CalendarAdapter())
+        .create()
 
     val allContacts: LiveData<List<Contact>> = contactsDao.getAllContactsLiveData()
 
@@ -34,12 +36,14 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
         get() = prefs.getString("uuid", null)
         set(value) = prefs.edit().putString("uuid", value).apply()
 
+    // Méthodes de gestion de la base de données locale
     suspend fun deleteAllContacts() = withContext(Dispatchers.IO) {
         contactsDao.clearAllContacts()
         uuid = null
     }
 
     suspend fun enrollAndFetchContacts() = withContext(Dispatchers.IO) {
+        // Obtention d'un nouveau UUID
         val newUuid = suspendCancellableCoroutine<String> { continuation ->
             enroll(
                 onSuccess = continuation::resume,
@@ -49,6 +53,7 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
 
         uuid = newUuid
 
+        // Récupération des contacts depuis l'API
         val contacts = suspendCancellableCoroutine<List<Contact>> { continuation ->
             getAllContacts(
                 newUuid,
@@ -61,8 +66,8 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
             )
         }
 
-        // Insertion des contacts dans la base locale
-        contactsDao.clearAllContacts() // Supprime les anciens contacts
+        // Mise à jour de la base de données locale
+        contactsDao.clearAllContacts()
         contacts.forEach { contact ->
             contact.apply {
                 remoteId = id
@@ -142,7 +147,7 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
                 }
                 contactsDao.delete(contact)
             } else {
-                contactsDao.delete(contact) // Suppression locale directe
+                contactsDao.delete(contact)
             }
         } catch (e: Exception) {
             contactsDao.delete(contact)
@@ -169,65 +174,99 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
         }
     }
 
-    // Implémentation des fonctions réseau
+    // ENROLL - Création d'un nouveau jeu de données et attribution d'un token
+    // GET https://daa.iict.ch/enroll
     private fun enroll(onSuccess: (String) -> Unit, onError: (String) -> Unit) {
         val url = "$baseUrl/enroll"
-        val request = StringRequest(
-            Request.Method.GET, url,
+        val request = object : StringRequest(
+            Method.GET, url,
             { response -> onSuccess(response) },
             { error -> onError(error.message ?: "Unknown error") }
-        )
+        ) {
+            override fun getHeaders(): MutableMap<String, String> = mutableMapOf()
+        }
         queue.add(request)
     }
 
+    // CONTACTS - Obtenir tous les contacts
+    // GET https://daa.iict.ch/contacts
     private fun getAllContacts(uuid: String, onSuccess: (JSONArray) -> Unit, onError: (String) -> Unit) {
         val url = "$baseUrl/contacts"
-        val request = JsonArrayRequest(
-            Request.Method.GET, url, null,
+        val request = object : JsonArrayRequest(
+            Method.GET, url, null,
             { response -> onSuccess(response) },
             { error -> onError(error.message ?: "Unknown error") }
-        ).apply {
-            headers["X-UUID"] = uuid
+        ) {
+            override fun getHeaders(): MutableMap<String, String> = mutableMapOf(
+                "X-UUID" to uuid
+            )
         }
         queue.add(request)
     }
 
+    // CONTACTS - Obtenir un contact spécifique
+    // GET https://daa.iict.ch/contacts/34
+    private fun getContact(uuid: String, contactId: Int, onSuccess: (JSONObject) -> Unit, onError: (String) -> Unit) {
+        val url = "$baseUrl/contacts/$contactId"
+        val request = object : JsonObjectRequest(
+            Method.GET, url, null,
+            { response -> onSuccess(response) },
+            { error -> onError(error.message ?: "Unknown error") }
+        ) {
+            override fun getHeaders(): MutableMap<String, String> = mutableMapOf(
+                "X-UUID" to uuid
+            )
+        }
+        queue.add(request)
+    }
+
+    // CONTACTS - Créer un nouveau contact
+    // POST https://daa.iict.ch/contacts/
     private fun addContact(uuid: String, contact: JSONObject, onSuccess: (JSONObject) -> Unit, onError: (String) -> Unit) {
-        val url = "$baseUrl/contacts/"
-        val request = JsonObjectRequest(
-            Request.Method.POST, url, contact,
+        val url = "$baseUrl/contacts"
+        val request = object : JsonObjectRequest(
+            Method.POST, url, contact,
             { response -> onSuccess(response) },
             { error -> onError(error.message ?: "Unknown error") }
-        ).apply {
-            headers["X-UUID"] = uuid
+        ) {
+            override fun getHeaders(): MutableMap<String, String> = mutableMapOf(
+                "X-UUID" to uuid,
+                "Content-Type" to "application/json"
+            )
         }
         queue.add(request)
     }
 
+    // CONTACTS - Modifier un contact
+    // PUT https://daa.iict.ch/contacts/34
     private fun updateContact(uuid: String, contactId: Int, contact: JSONObject, onSuccess: (JSONObject) -> Unit, onError: (String) -> Unit) {
         val url = "$baseUrl/contacts/$contactId"
-        val request = JsonObjectRequest(
-            Request.Method.PUT, url, contact,
+        val request = object : JsonObjectRequest(
+            Method.PUT, url, contact,
             { response -> onSuccess(response) },
             { error -> onError(error.message ?: "Unknown error") }
-        ).apply {
-            headers["X-UUID"] = uuid
+        ) {
+            override fun getHeaders(): MutableMap<String, String> = mutableMapOf(
+                "X-UUID" to uuid,
+                "Content-Type" to "application/json"
+            )
         }
         queue.add(request)
     }
 
+    // CONTACTS - Supprimer un contact
+    // DELETE https://daa.iict.ch/contacts/34
     private fun deleteContact(uuid: String, contactId: Int, onSuccess: () -> Unit, onError: (String) -> Unit) {
         val url = "$baseUrl/contacts/$contactId"
-        val request = StringRequest(
-            Request.Method.DELETE, url,
+        val request = object : StringRequest(
+            Method.DELETE, url,
             { onSuccess() },
             { error -> onError(error.message ?: "Unknown error") }
-        ).apply {
-            headers["X-UUID"] = uuid
+        ) {
+            override fun getHeaders(): MutableMap<String, String> = mutableMapOf(
+                "X-UUID" to uuid
+            )
         }
         queue.add(request)
     }
-
-    private val <T> T.headers: MutableMap<String, String>
-        get() = mutableMapOf()
 }

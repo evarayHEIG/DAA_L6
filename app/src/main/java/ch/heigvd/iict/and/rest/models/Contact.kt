@@ -1,6 +1,7 @@
 package ch.heigvd.iict.and.rest.models
 
-import android.annotation.SuppressLint
+import android.os.Parcel
+import android.os.Parcelable
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.google.gson.JsonDeserializer
@@ -47,7 +48,8 @@ data class Contact(
 
     @SerializedName("phoneNumber")
     var phoneNumber: String?
-) {
+) : Parcelable {
+
     constructor() : this(
         id = null,
         remoteId = null,
@@ -62,6 +64,40 @@ data class Contact(
         type = PhoneType.HOME,
         phoneNumber = "",
     )
+
+    constructor(parcel: Parcel) : this(
+        id = parcel.readValue(Long::class.java.classLoader) as? Long,
+        remoteId = parcel.readValue(Long::class.java.classLoader) as? Long,
+        state = ContactState.valueOf(parcel.readString() ?: ContactState.CREATED.name),
+        name = parcel.readString() ?: "",
+        firstname = parcel.readString(),
+        birthday = (parcel.readSerializable() as? Calendar),
+        email = parcel.readString(),
+        address = parcel.readString(),
+        zip = parcel.readString(),
+        city = parcel.readString(),
+        type = parcel.readString()?.let { PhoneType.valueOf(it) },
+        phoneNumber = parcel.readString()
+    )
+
+    override fun writeToParcel(parcel: Parcel, flags: Int) {
+        parcel.writeValue(id)
+        parcel.writeValue(remoteId)
+        parcel.writeString(state.name)
+        parcel.writeString(name)
+        parcel.writeString(firstname)
+        parcel.writeSerializable(birthday)
+        parcel.writeString(email)
+        parcel.writeString(address)
+        parcel.writeString(zip)
+        parcel.writeString(city)
+        parcel.writeString(type?.name)
+        parcel.writeString(phoneNumber)
+    }
+
+    override fun describeContents(): Int {
+        return 0
+    }
 
     fun isSynced() = state == ContactState.SYNCED
 
@@ -86,6 +122,17 @@ data class Contact(
                 else Calendar.getInstance().apply {
                     time = dateFormat.parse(json.asString)!!
                 }
+            }
+        }
+
+        @JvmField
+        val CREATOR = object : Parcelable.Creator<Contact> {
+            override fun createFromParcel(parcel: Parcel): Contact {
+                return Contact(parcel)
+            }
+
+            override fun newArray(size: Int): Array<Contact?> {
+                return arrayOfNulls(size)
             }
         }
     }

@@ -13,6 +13,8 @@ class ContactsViewModel(private val repository: ContactsRepository) : ViewModel(
     // Expose les contacts pour l'UI
     val allContacts: LiveData<List<Contact>> = repository.allContacts
 
+
+
     fun enroll() {
         viewModelScope.launch {
             try {
