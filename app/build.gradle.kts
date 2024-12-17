@@ -69,6 +69,10 @@ dependencies {
     implementation(libs.androidx.fragment.ktx)
 
     // Volley
+    implementation(libs.android.volley)
+
+    // Gson
+    implementation(libs.gson)
 
     // ViewModels + coroutines
     implementation(libs.androidx.lifecycle.runtime.ktx)
