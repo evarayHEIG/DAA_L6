@@ -13,6 +13,8 @@ fragment = "1.8.5"
 constraintlayout = "2.2.0"
 room = "2.6.1"
 lifecycle = "2.8.7"
+volley = "1.2.1"
+gson = "2.11.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -33,6 +35,8 @@ androidx-lifecycle-viewmodel-ktx = {group = "androidx.lifecycle", name = "lifecy
 androidx-lifecycle-livedata-ktx = {group = "androidx.lifecycle", name = "lifecycle-livedata-ktx", version.ref = "lifecycle"}
 androidx-lifecycle-common-java8 = {group = "androidx.lifecycle", name = "lifecycle-common-java8", version.ref = "lifecycle"}
 volley = { module = "com.android.volley:volley" }
+android-volley = { group = "com.android.volley", name = "volley", version.ref = "volley" }
+gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
