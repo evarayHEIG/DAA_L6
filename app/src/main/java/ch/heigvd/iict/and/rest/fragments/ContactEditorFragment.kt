@@ -1,10 +1,12 @@
 package ch.heigvd.iict.and.rest.fragments
 
 import android.app.DatePickerDialog
+import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.annotation.RequiresApi
 import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -38,11 +40,12 @@ class ContactEditorFragment : Fragment() {
         return binding.root
     }
 
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
         arguments?.let {
-            contact = it.getParcelable(ARG_CONTACT)
+            contact = it.getParcelable(ARG_CONTACT, Contact::class.java)
             tmpContact = contact?.copy() ?: Contact()
         }
 

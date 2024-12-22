@@ -1,20 +1,20 @@
 package ch.heigvd.iict.and.rest
 
+import ch.heigvd.iict.and.rest.adapters.CalendarAdapter
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.lifecycle.LiveData
-import ch.heigvd.iict.and.rest.adapters.CalendarAdapter
 import ch.heigvd.iict.and.rest.database.ContactsDao
 import ch.heigvd.iict.and.rest.models.Contact
 import ch.heigvd.iict.and.rest.models.ContactState
-import com.android.volley.Request.Method
 import com.android.volley.toolbox.*
-import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
@@ -26,9 +26,11 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
     private val baseUrl = "https://daa.iict.ch"
     private val queue = Volley.newRequestQueue(context)
     private val prefs: SharedPreferences = context.getSharedPreferences("contacts_prefs", Context.MODE_PRIVATE)
-    private val gson = GsonBuilder()
-        .registerTypeAdapter(Calendar::class.java, CalendarAdapter())
-        .create()
+    private val json = Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+    }
+
 
     val allContacts: LiveData<List<Contact>> = contactsDao.getAllContactsLiveData()
 
@@ -43,7 +45,6 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
     }
 
     suspend fun enrollAndFetchContacts() = withContext(Dispatchers.IO) {
-        // Obtention d'un nouveau UUID
         val newUuid = suspendCancellableCoroutine<String> { continuation ->
             enroll(
                 onSuccess = continuation::resume,
@@ -53,20 +54,18 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
 
         uuid = newUuid
 
-        // Récupération des contacts depuis l'API
         val contacts = suspendCancellableCoroutine<List<Contact>> { continuation ->
             getAllContacts(
                 newUuid,
                 onSuccess = { jsonArray ->
-                    val type = object : TypeToken<List<Contact>>() {}.type
-                    val contacts = gson.fromJson<List<Contact>>(jsonArray.toString(), type)
+                    val contactsString = jsonArray.toString()
+                    val contacts = json.decodeFromString<List<Contact>>(contactsString)
                     continuation.resume(contacts)
                 },
                 onError = { error -> continuation.resumeWithException(Exception(error)) }
             )
         }
 
-        // Mise à jour de la base de données locale
         contactsDao.clearAllContacts()
         contacts.forEach { contact ->
             contact.apply {
@@ -79,7 +78,7 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
 
     suspend fun insert(contact: Contact) = withContext(Dispatchers.IO) {
         val currentUuid = uuid ?: throw Exception("No UUID available")
-        val jsonContact = gson.toJson(contact)
+        val jsonContact = json.encodeToString(contact)
 
         try {
             val jsonResponse = suspendCancellableCoroutine<JSONObject> { continuation ->
@@ -90,7 +89,7 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
                     onError = { error -> continuation.resumeWithException(Exception(error)) }
                 )
             }
-            val createdContact = gson.fromJson(jsonResponse.toString(), Contact::class.java).apply {
+            val createdContact = json.decodeFromString<Contact>(jsonResponse.toString()).apply {
                 remoteId = id
                 state = ContactState.SYNCED
             }
@@ -103,7 +102,8 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
 
     suspend fun update(contact: Contact) = withContext(Dispatchers.IO) {
         val currentUuid = uuid ?: throw Exception("No UUID available")
-        val jsonContact = gson.toJson(contact)
+        val jsonContact = json.encodeToString(contact)
+        Log.d("ContactsRepository", "JSON à envoyer pour la mise à jour: $jsonContact")
 
         try {
             if (contact.remoteId != null) {
@@ -116,7 +116,7 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
                         onError = { error -> continuation.resumeWithException(Exception(error)) }
                     )
                 }
-                val updatedContact = gson.fromJson(jsonResponse.toString(), Contact::class.java).apply {
+                val updatedContact = json.decodeFromString<Contact>(jsonResponse.toString()).apply {
                     state = ContactState.SYNCED
                 }
                 contactsDao.update(updatedContact)
