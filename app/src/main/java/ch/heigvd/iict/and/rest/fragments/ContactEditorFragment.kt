@@ -72,6 +72,7 @@ class ContactEditorFragment : Fragment() {
                 PhoneType.HOME -> radioHome.isChecked = true
                 PhoneType.MOBILE -> radioMobile.isChecked = true
                 PhoneType.OFFICE -> radioWork.isChecked = true
+                PhoneType.FAX -> radioFax.isChecked = true
                 else -> radioHome.isChecked = true
             }
 
@@ -105,6 +106,7 @@ class ContactEditorFragment : Fragment() {
                     R.id.radioHome -> PhoneType.HOME
                     R.id.radioMobile -> PhoneType.MOBILE
                     R.id.radioWork -> PhoneType.OFFICE
+                    R.id.radioFax -> PhoneType.FAX
                     else -> PhoneType.HOME
                 }
             }

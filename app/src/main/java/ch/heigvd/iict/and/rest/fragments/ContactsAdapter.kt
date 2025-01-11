@@ -1,5 +1,6 @@
 package ch.heigvd.iict.and.rest.fragments
 
+import android.annotation.SuppressLint
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -11,6 +12,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import ch.heigvd.iict.and.rest.R
 import ch.heigvd.iict.and.rest.models.Contact
+import ch.heigvd.iict.and.rest.models.ContactState
 import ch.heigvd.iict.and.rest.models.PhoneType
 
 class ContactsAdapter(contacts : List<Contact>, private val clickListener: OnItemClickListener) : RecyclerView.Adapter<ContactsAdapter.ViewHolder>() {
@@ -51,9 +53,13 @@ class ContactsAdapter(contacts : List<Contact>, private val clickListener: OnIte
             name.text = "${contact.name} ${contact.firstname}"
             phonenumber.text = "${contact.phoneNumber}"
 
-            //FIXME color may depend on item sync status
-            val colRes = android.R.color.holo_green_dark
-            image.setColorFilter(ContextCompat.getColor(image.context, colRes))
+            val colorRes = when(contact.state) {
+                ContactState.SYNCED -> android.R.color.holo_green_dark
+                ContactState.CREATED -> android.R.color.holo_blue_dark
+                ContactState.UPDATED -> android.R.color.holo_orange_dark
+                ContactState.DELETED -> android.R.color.holo_red_dark
+            }
+            image.setColorFilter(ContextCompat.getColor(image.context, colorRes))
 
             when(contact.type) {
                 PhoneType.HOME -> type.setImageResource(R.drawable.phone)
@@ -91,7 +97,8 @@ class ContactsDiffCallBack(private val oldList: List<Contact>, private val newLi
                 oldContact.zip == newContact.zip &&
                 oldContact.city == newContact.city &&
                 oldContact.type == newContact.type &&
-                oldContact.phoneNumber == newContact.phoneNumber
+                oldContact.phoneNumber == newContact.phoneNumber &&
+                oldContact.state == newContact.state
     }
 
 }

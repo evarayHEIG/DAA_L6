@@ -1,23 +1,18 @@
 package ch.heigvd.iict.and.rest
 
-import ch.heigvd.iict.and.rest.adapters.CalendarAdapter
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Log
 import androidx.lifecycle.LiveData
 import ch.heigvd.iict.and.rest.database.ContactsDao
 import ch.heigvd.iict.and.rest.models.Contact
 import ch.heigvd.iict.and.rest.models.ContactState
 import com.android.volley.toolbox.*
-import com.google.gson.GsonBuilder
-import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.Calendar
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -29,8 +24,8 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
     private val json = Json {
         ignoreUnknownKeys = true
         coerceInputValues = true
+        encodeDefaults = true
     }
-
 
     val allContacts: LiveData<List<Contact>> = contactsDao.getAllContactsLiveData()
 
@@ -38,14 +33,18 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
         get() = prefs.getString("uuid", null)
         set(value) = prefs.edit().putString("uuid", value).apply()
 
-    // Méthodes de gestion de la base de données locale
     suspend fun deleteAllContacts() = withContext(Dispatchers.IO) {
         contactsDao.clearAllContacts()
         uuid = null
     }
 
+    /**
+     * Enregistre l'application auprès du serveur et récupère les contacts.
+     * Cette méthode doit être appelée au démarrage de l'application.
+     */
     suspend fun enrollAndFetchContacts() = withContext(Dispatchers.IO) {
-        val newUuid = suspendCancellableCoroutine<String> { continuation ->
+        // Obtention d'un nouveau UUID
+        val newUuid = suspendCancellableCoroutine { continuation ->
             enroll(
                 onSuccess = continuation::resume,
                 onError = { error -> continuation.resumeWithException(Exception(error)) }
@@ -54,7 +53,8 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
 
         uuid = newUuid
 
-        val contacts = suspendCancellableCoroutine<List<Contact>> { continuation ->
+        // Récupération des contacts depuis le serveur
+        val contacts = suspendCancellableCoroutine { continuation ->
             getAllContacts(
                 newUuid,
                 onSuccess = { jsonArray ->
@@ -66,6 +66,7 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
             )
         }
 
+        // Update the local database with the fetched contacts
         contactsDao.clearAllContacts()
         contacts.forEach { contact ->
             contact.apply {
@@ -76,12 +77,19 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
         }
     }
 
+    /**
+     * Insert a new contact in the database and try to insert it on the server as well.
+     * If the insertion on the server fails, the contact is marked as CREATED.
+     * If the contact already exists in the database and the call succeeds, it is updated.
+     * @param contact The contact to insert
+     * @throws Exception If no UUID is available, or if an error occurs during the insertion
+     */
     suspend fun insert(contact: Contact) = withContext(Dispatchers.IO) {
         val currentUuid = uuid ?: throw Exception("No UUID available")
-        val jsonContact = json.encodeToString(contact)
+        val jsonContact = json.encodeToString(Contact.serializer(), contact)
 
         try {
-            val jsonResponse = suspendCancellableCoroutine<JSONObject> { continuation ->
+            val jsonResponse = suspendCancellableCoroutine { continuation ->
                 addContact(
                     currentUuid,
                     JSONObject(jsonContact),
@@ -89,24 +97,38 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
                     onError = { error -> continuation.resumeWithException(Exception(error)) }
                 )
             }
-            val createdContact = json.decodeFromString<Contact>(jsonResponse.toString()).apply {
+            // If we reach this point, the contact was successfully created on the server
+            val createdContact = json.decodeFromString(Contact.serializer(), jsonResponse.toString()).apply {
                 remoteId = id
                 state = ContactState.SYNCED
             }
-            contactsDao.insert(createdContact)
+            if (contact.id != null) {
+                // If the contact already exists in the database, we update it
+                contactsDao.update(createdContact)
+            } else {
+                // Otherwise we insert it in the database
+                contactsDao.insert(createdContact)
+            }
         } catch (e: Exception) {
+            // If an error occurred during the insertion, we mark the contact as CREATED
             contact.state = ContactState.CREATED
             contactsDao.insert(contact)
         }
     }
 
+    /**
+     * Update a contact.
+     * If the update on the server fails, the contact is marked as UPDATED.
+     * @param contact The contact to update
+     * @throws Exception If no UUID is available, or if an error occurs during the update
+     */
     suspend fun update(contact: Contact) = withContext(Dispatchers.IO) {
         val currentUuid = uuid ?: throw Exception("No UUID available")
-        val jsonContact = json.encodeToString(contact)
-        Log.d("ContactsRepository", "JSON à envoyer pour la mise à jour: $jsonContact")
+        var contactToUpdate = contact
 
         try {
             if (contact.remoteId != null) {
+                val jsonContact = json.encodeToString(Contact.serializer(), contact)
                 val jsonResponse = suspendCancellableCoroutine<JSONObject> { continuation ->
                     updateContact(
                         currentUuid,
@@ -116,44 +138,72 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
                         onError = { error -> continuation.resumeWithException(Exception(error)) }
                     )
                 }
-                val updatedContact = json.decodeFromString<Contact>(jsonResponse.toString()).apply {
+                val updatedContact = json.decodeFromString(Contact.serializer(), jsonResponse.toString()).apply {
+                    remoteId = this.id
                     state = ContactState.SYNCED
                 }
-                contactsDao.update(updatedContact)
+                contactToUpdate = updatedContact
             } else {
-                contact.state = ContactState.UPDATED
-                contactsDao.update(contact)
+                // If the contact is not on the server yet and is not marked as CREATED, we mark it as UPDATED
+                if (contact.state != ContactState.CREATED) {
+                    // We are updating it locally, so we mark it as UPDATED
+                    contact.state = ContactState.UPDATED
+                }
             }
         } catch (e: Exception) {
+            // Switch the contact to UPDATED if it was previously SYNCED
             if (contact.state == ContactState.SYNCED) {
                 contact.state = ContactState.UPDATED
             }
-            contactsDao.update(contact)
         }
+        contactsDao.update(contactToUpdate)
     }
 
+    /**
+     * Supprime un contact.
+     * Si la suppression sur le serveur échoue, le contact est marqué comme DELETED localement.
+     */
     suspend fun delete(contact: Contact) = withContext(Dispatchers.IO) {
         val currentUuid = uuid ?: throw Exception("No UUID available")
 
         try {
             if (contact.remoteId != null) {
-                suspendCancellableCoroutine<Unit> { continuation ->
-                    deleteContact(
-                        currentUuid,
-                        contact.remoteId!!.toInt(),
-                        onSuccess = { continuation.resume(Unit) },
-                        onError = { error -> continuation.resumeWithException(Exception(error)) }
-                    )
+                try {
+                    suspendCancellableCoroutine { continuation ->
+                        deleteContact(
+                            currentUuid,
+                            contact.remoteId!!.toInt(),
+                            onSuccess = { continuation.resume(Unit) },
+                            onError = { error -> continuation.resumeWithException(Exception(error)) }
+                        )
+                    }
+                    contactsDao.delete(contact)
+                } catch (e: Exception) {
+                    contact.state = ContactState.DELETED
+                    contactsDao.update(contact)
                 }
-                contactsDao.delete(contact)
             } else {
-                contactsDao.delete(contact)
+                // If the contact is not on the server yet, we can delete locally
+                when (contact.state) {
+                    // If the contact was only created locally, we can delete it directly
+                    ContactState.CREATED -> contactsDao.delete(contact)
+                    // If the contact was updated locally, we mark it as DELETED but keep it in the database until it is synchronized
+                    else -> {
+                        contact.state = ContactState.DELETED
+                        contactsDao.update(contact)
+                    }
+                }
             }
         } catch (e: Exception) {
-            contactsDao.delete(contact)
+            // If the deletion on the server fails, we mark the contact as DELETED
+            contact.state = ContactState.DELETED
+            contactsDao.update(contact)
         }
     }
 
+    /**
+     * Synchronise tous les contacts non synchronisés avec le serveur.
+     */
     suspend fun synchronizeAllContacts() = withContext(Dispatchers.IO) {
         val currentUuid = uuid ?: throw Exception("No UUID available")
         val unsyncedContacts = contactsDao.getAllContacts().filter {
@@ -174,8 +224,8 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
         }
     }
 
-    // ENROLL - Création d'un nouveau jeu de données et attribution d'un token
-    // GET https://daa.iict.ch/enroll
+    // Méthodes privées pour les appels API
+
     private fun enroll(onSuccess: (String) -> Unit, onError: (String) -> Unit) {
         val url = "$baseUrl/enroll"
         val request = object : StringRequest(
@@ -188,14 +238,12 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
         queue.add(request)
     }
 
-    // CONTACTS - Obtenir tous les contacts
-    // GET https://daa.iict.ch/contacts
     private fun getAllContacts(uuid: String, onSuccess: (JSONArray) -> Unit, onError: (String) -> Unit) {
         val url = "$baseUrl/contacts"
         val request = object : JsonArrayRequest(
             Method.GET, url, null,
             { response -> onSuccess(response) },
-            { error -> onError(error.message ?: "Unknown error") }
+            { error -> onError(error.message ?: "Error while fetching contacts") }
         ) {
             override fun getHeaders(): MutableMap<String, String> = mutableMapOf(
                 "X-UUID" to uuid
@@ -204,14 +252,12 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
         queue.add(request)
     }
 
-    // CONTACTS - Obtenir un contact spécifique
-    // GET https://daa.iict.ch/contacts/34
     private fun getContact(uuid: String, contactId: Int, onSuccess: (JSONObject) -> Unit, onError: (String) -> Unit) {
         val url = "$baseUrl/contacts/$contactId"
         val request = object : JsonObjectRequest(
             Method.GET, url, null,
             { response -> onSuccess(response) },
-            { error -> onError(error.message ?: "Unknown error") }
+            { error -> onError(error.message ?: "Error fetching contact") }
         ) {
             override fun getHeaders(): MutableMap<String, String> = mutableMapOf(
                 "X-UUID" to uuid
@@ -220,14 +266,12 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
         queue.add(request)
     }
 
-    // CONTACTS - Créer un nouveau contact
-    // POST https://daa.iict.ch/contacts/
     private fun addContact(uuid: String, contact: JSONObject, onSuccess: (JSONObject) -> Unit, onError: (String) -> Unit) {
         val url = "$baseUrl/contacts"
         val request = object : JsonObjectRequest(
             Method.POST, url, contact,
             { response -> onSuccess(response) },
-            { error -> onError(error.message ?: "Unknown error") }
+            { error -> onError(error.message ?: "Error adding contact") }
         ) {
             override fun getHeaders(): MutableMap<String, String> = mutableMapOf(
                 "X-UUID" to uuid,
@@ -237,14 +281,12 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
         queue.add(request)
     }
 
-    // CONTACTS - Modifier un contact
-    // PUT https://daa.iict.ch/contacts/34
     private fun updateContact(uuid: String, contactId: Int, contact: JSONObject, onSuccess: (JSONObject) -> Unit, onError: (String) -> Unit) {
         val url = "$baseUrl/contacts/$contactId"
         val request = object : JsonObjectRequest(
             Method.PUT, url, contact,
             { response -> onSuccess(response) },
-            { error -> onError(error.message ?: "Unknown error") }
+            { error -> onError(error.message ?: "Error updating contact") }
         ) {
             override fun getHeaders(): MutableMap<String, String> = mutableMapOf(
                 "X-UUID" to uuid,
@@ -254,14 +296,12 @@ class ContactsRepository(private val contactsDao: ContactsDao, private val conte
         queue.add(request)
     }
 
-    // CONTACTS - Supprimer un contact
-    // DELETE https://daa.iict.ch/contacts/34
     private fun deleteContact(uuid: String, contactId: Int, onSuccess: () -> Unit, onError: (String) -> Unit) {
         val url = "$baseUrl/contacts/$contactId"
         val request = object : StringRequest(
             Method.DELETE, url,
             { onSuccess() },
-            { error -> onError(error.message ?: "Unknown error") }
+            { error -> onError(error.message ?: "Error deleting contact") }
         ) {
             override fun getHeaders(): MutableMap<String, String> = mutableMapOf(
                 "X-UUID" to uuid
