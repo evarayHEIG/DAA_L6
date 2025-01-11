@@ -14,23 +14,38 @@ import ch.heigvd.iict.and.rest.R
 import ch.heigvd.iict.and.rest.databinding.FragmentContactEditorBinding
 import ch.heigvd.iict.and.rest.models.Contact
 import ch.heigvd.iict.and.rest.models.PhoneType
-import ch.heigvd.iict.and.rest.database.converters.CalendarConverter
 import ch.heigvd.iict.and.rest.viewmodels.ContactsViewModel
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
+/**
+ * ContactEditorFragment allows the user to create or edit a contact.
+ */
 class ContactEditorFragment : Fragment() {
 
+    // Binding for accessing UI elements in the fragment layout
     private var _binding: FragmentContactEditorBinding? = null
     private val binding get() = _binding!!
 
+    // ViewModel for managing contact data
     private val contactsViewModel: ContactsViewModel by activityViewModels()
+
+    // Current contact being edited
     private var contact: Contact? = null
+
+    // Temporary contact used for changes
     private var tmpContact = Contact()
-    private val calendarConverter = CalendarConverter()
+
     private val dateFormat = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault())
 
+    /**
+     * Called to create the fragment's view hierarchy.
+     * @param inflater The LayoutInflater object that can be used to inflate views
+     * @param container The parent view that the fragment's UI will be attached to
+     * @param savedInstanceState A Bundle containing the saved state of the fragment
+     * @return The root view of the fragment
+     */
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -40,19 +55,30 @@ class ContactEditorFragment : Fragment() {
         return binding.root
     }
 
+    /**
+     * Called after the fragment's view has been created.
+     * Sets up the views and listeners for user interaction.
+     * @param view The fragment's root view
+     * @param savedInstanceState A Bundle containing the saved state of the fragment
+     */
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        // Retrieve the contact passed as an argument
         arguments?.let {
             contact = it.getParcelable(ARG_CONTACT, Contact::class.java)
             tmpContact = contact?.copy() ?: Contact()
         }
 
+        // Setup the views and listeners
         setupViews()
         setupListeners()
     }
 
+    /**
+     * Configures the views based on the current contact data.
+     */
     private fun setupViews() {
         binding.apply {
             title.text = getString(
@@ -80,20 +106,27 @@ class ContactEditorFragment : Fragment() {
         }
     }
 
+    /**
+     * Sets up listeners for user interactions with the views.
+     */
     private fun setupListeners() {
         binding.apply {
+            // Listener for the birthday input
             birthdayInput.setOnClickListener {
                 showDatePicker()
             }
 
+            // Listener for the cancel button
             cancelButton.setOnClickListener {
                 parentFragmentManager.popBackStack()
             }
 
+            // Listener for the save button
             saveButton.setOnClickListener {
                 saveContact()
             }
 
+            // Listener for the delete button
             deleteButton.setOnClickListener {
                 contact?.let {
                     contactsViewModel.delete(it)
@@ -101,6 +134,7 @@ class ContactEditorFragment : Fragment() {
                 }
             }
 
+            // Listener for phone type radio group
             phoneTypeGroup.setOnCheckedChangeListener { _, checkedId ->
                 tmpContact.type = when (checkedId) {
                     R.id.radioHome -> PhoneType.HOME
@@ -111,7 +145,7 @@ class ContactEditorFragment : Fragment() {
                 }
             }
 
-            // Listeners pour les champs texte
+            // Listeners for text fields
             nameInput.doAfterTextChanged { tmpContact.name = it?.toString() ?: "" }
             firstnameInput.doAfterTextChanged { tmpContact.firstname = it?.toString() }
             addressInput.doAfterTextChanged { tmpContact.address = it?.toString() }
@@ -121,6 +155,9 @@ class ContactEditorFragment : Fragment() {
         }
     }
 
+    /**
+     * Displays a date picker dialog for selecting a birthday.
+     */
     private fun showDatePicker() {
         val calendar = Calendar.getInstance()
         tmpContact.birthday?.let {
@@ -140,6 +177,9 @@ class ContactEditorFragment : Fragment() {
         ).show()
     }
 
+    /**
+     * Saves the contact by either updating or inserting it.
+     */
     private fun saveContact() {
         if (contact != null) {
             contactsViewModel.update(tmpContact)
@@ -149,6 +189,9 @@ class ContactEditorFragment : Fragment() {
         parentFragmentManager.popBackStack()
     }
 
+    /**
+     * Cleans up resources when the view is destroyed.
+     */
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
@@ -157,6 +200,11 @@ class ContactEditorFragment : Fragment() {
     companion object {
         private const val ARG_CONTACT = "contact"
 
+        /**
+         * Creates a new instance of ContactEditorFragment with the given contact.
+         * @param contact The contact to be edited, or null for a new contact
+         * @return A new instance of ContactEditorFragment
+         */
         fun newInstance(contact: Contact?) = ContactEditorFragment().apply {
             arguments = Bundle().apply {
                 putParcelable(ARG_CONTACT, contact)

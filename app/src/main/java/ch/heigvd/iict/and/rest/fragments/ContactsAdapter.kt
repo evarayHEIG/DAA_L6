@@ -1,6 +1,5 @@
 package ch.heigvd.iict.and.rest.fragments
 
-import android.annotation.SuppressLint
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -88,7 +87,6 @@ class ContactsDiffCallBack(private val oldList: List<Contact>, private val newLi
         val oldContact = oldList[oldItemPosition]
         val newContact = newList[newItemPosition]
 
-        // FIXME - you may have to change the comparaison if the data class Contact change
         return  oldContact.name == newContact.name &&
                 oldContact.firstname == newContact.firstname &&
                 oldContact.birthday == newContact.birthday &&

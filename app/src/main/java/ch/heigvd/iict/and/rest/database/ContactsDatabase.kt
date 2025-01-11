@@ -27,7 +27,7 @@ abstract class ContactsDatabase : RoomDatabase() {
                 val _instance = Room.databaseBuilder(context.applicationContext,
                 ContactsDatabase::class.java, "contacts.db")
                     .fallbackToDestructiveMigration()
-                    .addCallback(MyDatabaseCallback()) //FIXME - can be removed
+                    .addCallback(MyDatabaseCallback())
                     .build()
 
                 INSTANCE = _instance

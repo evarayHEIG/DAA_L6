@@ -10,6 +10,12 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import java.util.*
 
+/**
+ * Data class representing a contact
+ * @author Rachel Tranchida
+ * @author Massimo Stefani
+ * @author Eva Ray
+ */
 @Serializable
 @Entity
 data class Contact(
@@ -115,16 +121,13 @@ data class Contact(
         phoneNumber = parcel.readString()
     )
 
-    companion object {
-        @JvmField
-        val CREATOR = object : Parcelable.Creator<Contact> {
-            override fun createFromParcel(parcel: Parcel): Contact {
-                return Contact(parcel)
-            }
+    companion object CREATOR : Parcelable.Creator<Contact> {
+        override fun createFromParcel(parcel: Parcel): Contact {
+            return Contact(parcel)
+        }
 
-            override fun newArray(size: Int): Array<Contact?> {
-                return arrayOfNulls(size)
-            }
+        override fun newArray(size: Int): Array<Contact?> {
+            return arrayOfNulls(size)
         }
     }
 }
